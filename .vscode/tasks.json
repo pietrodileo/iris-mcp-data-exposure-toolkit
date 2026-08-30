@@ -1,0 +1,57 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "MCP - Docker: Build and Start",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "MCP - Docker: Build IRIS",
+        "MCP - IRIS: Configure Endpoint User",
+        "MCP - Docker: Start Bridge"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "MCP - Docker: Build IRIS",
+      "type": "shell",
+      "command": "docker compose up -d --build --wait --wait-timeout 180 iris",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "MCP - IRIS: Configure Endpoint User",
+      "type": "shell",
+      "command": "docker compose exec iris iris session IRIS -U MCP_EXAMPLE '##class(MCPData.Setup).ConfigureUsers()'",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "MCP - Docker: Start Bridge",
+      "type": "shell",
+      "command": "docker compose up -d mcp",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "MCP - Docker: See Logs",
+      "type": "shell",
+      "command": "docker compose logs --follow --tail 200",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "MCP - Docker: Cleanup Everything",
+      "type": "shell",
+      "command": "docker compose down --volumes --remove-orphans --rmi all",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    },
+    {
+      "label": "MCP - Open: IRIS Management Portal",
+      "type": "shell",
+      "command": "open http://localhost:9292/csp/sys/UtilHome.csp",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": []
+    }
+  ]
+}

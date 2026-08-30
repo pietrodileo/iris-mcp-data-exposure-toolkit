@@ -1,0 +1,11 @@
+{
+    "servers": {
+        "health-example": {
+            "type": "http",
+            "url": "http://localhost:8280/mcp/health-example",
+            "headers": {
+                "Authorization": "Basic bWNwX3JlYWRlcjptY3BfcmVhZGVyX3Rlc3RfMTIzNA=="
+            }
+        }
+    }
+}

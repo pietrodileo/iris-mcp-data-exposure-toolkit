@@ -1,0 +1,18 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "objectscript",
+      "request": "launch",
+      "name": "Debug MCP Toolkit Test",
+      "program": "##class(MCPData.Test).Run()"
+    },
+    {
+      "type": "objectscript",
+      "request": "attach",
+      "name": "Attach to IRIS Process",
+      "processId": "${command:PickProcess}",
+      "system": true
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "files.associations": {
+    "Dockerfile*": "dockerfile",
+    "iris.script": "objectscript"
+  },
+  "objectscript.conn": {
+    "active": false,
+    "ns": "MCP_EXAMPLE",
+    "username": "_SYSTEM",
+    "password": "SYS",
+    "docker-compose": {
+      "service": "iris",
+      "internalPort": 52773
+    },
+    "links": {
+      "IRIS Management Portal": "${serverUrl}/csp/sys/UtilHome.csp?$NAMESPACE=MCP_EXAMPLE"
+    }
+  }
+}
