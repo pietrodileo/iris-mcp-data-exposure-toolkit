@@ -1,0 +1,25 @@
+services:
+  iris:
+    build: .
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "iris", "session", "IRIS", "-U", "%SYS", "halt"]
+      interval: 2s
+      timeout: 5s
+      retries: 90
+      start_period: 5s
+    ports:
+      - "9292:52773"
+      - "9291:1972"
+  mcp:
+    build: .
+    entrypoint: ["iris-mcp-server"]
+    command: ["--config","/home/irisowner/dev/config_http.toml","run"]
+    depends_on:
+      iris:
+        condition: service_healthy
+    env_file:
+      - .env
+    ports:
+      - "8280:8080"

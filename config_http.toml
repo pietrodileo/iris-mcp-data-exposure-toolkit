@@ -1,0 +1,13 @@
+[[iris]]
+name = "health-example"
+server = { host = "iris", port = 1972, username = "@{env:WG_USER}", password = "@{env:WG_PASS}" }
+endpoints = [{ path = "/mcp/health-example", username = "@{env:APP_USER}", password = "@{env:APP_PASS}" }]
+[mcp]
+transport = "http"
+host = "0.0.0.0"
+port = 8080
+[logging]
+level = "info"
+output = "file"
+file = "/tmp/mcp-example-toolkit.log"
+

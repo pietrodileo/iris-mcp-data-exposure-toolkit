@@ -1,0 +1,10 @@
+[Actions]
+ModifyService:Name=%Service_CallIn,Enabled=1,AutheEnabled=48
+CreateResource:Name=%DB_MCP_EXAMPLE_DATA,Description="MCP toolkit data"
+CreateDatabase:Name=MCP_EXAMPLE_DATA,Directory=/usr/irissys/mgr/MCP_EXAMPLE_DATA,Resource=%DB_MCP_EXAMPLE_DATA
+CreateResource:Name=%DB_MCP_EXAMPLE_CODE,Description="MCP toolkit code"
+CreateDatabase:Name=MCP_EXAMPLE_CODE,Directory=/usr/irissys/mgr/MCP_EXAMPLE_CODE,Resource=%DB_MCP_EXAMPLE_CODE
+CreateNamespace:Name=MCP_EXAMPLE,Globals=MCP_EXAMPLE_DATA,Routines=MCP_EXAMPLE_CODE,Interop=1
+[Startup]
+SystemMode=AI Hub EAP
+

@@ -1,0 +1,10 @@
+    zn "%SYS"
+    Do ##class(Security.Users).UnExpireUserPasswords("*")
+    set sc=$SYSTEM.OBJ.Load("/home/irisowner/dev/App.Installer.cls","ck")
+    if $SYSTEM.Status.IsError(sc) write $SYSTEM.Status.GetErrorText(sc),!
+    set sc=##class(App.Installer).setup()
+    if $SYSTEM.Status.IsError(sc) write $SYSTEM.Status.GetErrorText(sc),!
+    zn "MCP_EXAMPLE"
+    Do ##class(MCPData.Test).Run()
+    halt
+
