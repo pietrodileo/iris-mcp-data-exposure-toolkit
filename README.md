@@ -36,18 +36,29 @@ The examples cover SQL, globals, and operational data. There is no DocDB templat
 
 ## How it works
 
-The tools are methods in an ObjectScript class that extends `%AI.Tool`. A `%AI.ToolSet` groups them and attaches the authorization and audit policies; `%AI.MCP.Service` registers the service inside IRIS.
+The tools are methods in an ObjectScript class that extends `%AI.Tool`. A `%AI.ToolSet` class groups them and attaches the authorization and audit policies; `%AI.MCP.Service` registers the service inside IRIS.
 
 External clients connect through the EAP's `iris-mcp-server` binary, which provides the Streamable HTTP transport and forwards requests to IRIS over port `1972`. It runs in the separate `mcp` container so its startup and logs stay separate from the database. That container runs only the bridge, not a second IRIS instance.
 
 ```text
-MCP client
-  -> http://localhost:8280/mcp/health-example
-  -> iris-mcp-server in the mcp container (port 8080)
-  -> IRIS service iris:1972
-  -> MCPData.Service.HealthExample
-  -> MCPData.ToolSet.HealthExample
+MCP client (on your machine)
+  |
+  | Streamable HTTP: http://localhost:8280/mcp/health-example
+  | Docker maps host port 8280 to container port 8080
+  v
+iris-mcp-server (in the mcp container)
+  |
+  | Native connection to iris:1972 over the Compose network
+  v
+IRIS (in the iris container, namespace MCP_EXAMPLE)
+  -> MCPData.Service.HealthExample    selects the ToolSet
+  -> MCPData.ToolSet.HealthExample    attaches authorization and audit policies
+  -> MCPData.Tools.HealthExample      executes the requested ObjectScript method
 ```
+
+The client connects only to port `8280`. Here, `iris` in `iris:1972` is the Compose service name, resolved inside Docker—not a second HTTP URL. The bridge forwards the request to the registered IRIS MCP application; the service, ToolSet, and tool class are ObjectScript classes within that same IRIS instance, not additional network services. The result returns to the client through the bridge.
+
+Host port `9291` also maps to IRIS port `1972` for direct development access, but it is not used in this MCP request path.
 
 ## Security model
 
@@ -65,6 +76,10 @@ Audit records can be inspected in the IRIS Management Portal. This example queri
 
 ![IRIS Management Portal showing an audit record for a ListResources tool call](pic/audit_example.png)
 
+The fuller example below shows SQL and global tool calls recorded separately, with filters or paths, execution time, and returned counts—not full patient records. The failed `SearchPatients` call also has an entry: an invalid `diabetic` value is captured in `StatusText`, while a valid call records its filters and result count. Auditing covers failed executions as well as successful reads; fields unrelated to a tool remain empty.
+
+![IRIS audit table showing SQL and global tool calls, result counts, and a patient-filter validation error](pic/audit_example_2.png)
+
 ### Credentials
 
 - `APP_USER` and `APP_PASS` authenticate the MCP client. Setup creates this dedicated user (default `mcp_reader`) with the `MCPDataReader` role.
@@ -72,11 +87,7 @@ Audit records can be inspected in the IRIS Management Portal. This example queri
 
 ### Development limits
 
-`RecentApplicationErrors` omits stack frames, variables, usernames, and object data from its response, but error text can still contain sensitive values. `ReadGlobalData` returns raw values within its allowed depth and is not a redaction layer. Review both outputs before adapting these examples to real logs or enterprise data.
-
 This is a local development example built on pre-release software. The [AI Hub EAP documentation](https://github.com/intersystems-community/ai-hub-eap#readme) states that the software is not intended for production. The demo uses HTTP Basic authentication over local HTTP and development credentials; do not expose it to an untrusted network. A deployment with real data would require a separate review of TLS, credentials, network exposure, data minimization, and privileges.
-
-Compose also publishes the native IRIS port on host port `9291` for development. MCP clients do not need that port, and the bridge does not isolate it.
 
 ## Run
 
@@ -142,7 +153,7 @@ VS Code users can also run **MCP - Docker: Cleanup Everything** or **MCP - Open:
 ## Exposed tools
 
 - `ListResources`: describes the approved data sources, read-only operations, and result limits.
-- `SearchPatients`: searches imported patient records by diagnosis, diabetic status, smoker status, and age range. It accepts scalar filters only and returns at most 50 rows.
+- `SearchPatients`: searches imported patient records by diagnosis, diabetic status, smoker status, and age range. It accepts scalar filters only and returns at most 50 rows per call. `row_count` counts the returned rows, not the table's contents; `applied_limit` reports the enforced limit. `truncated: true` means more matching rows exist. A false flag means all matches for the supplied filters were returned—not necessarily the whole table. The 50-row cap is per call, not a cumulative access limit.
 - `ReadGlobalData`: reads the `^ERRORS` global with bounded depth and result count.
 - `LargestGlobals`: top 1-20 globals visible in `MCP_EXAMPLE`, using native `%SYS.GlobalQuery`; system globals and mapped subscript ranges are excluded.
 - `RecentApplicationErrors`: latest 1-20 `MCP_EXAMPLE` application errors from `^ERRORS`; returns only ID, timestamp, and error text. Stack, variables, usernames, and object data stay hidden.

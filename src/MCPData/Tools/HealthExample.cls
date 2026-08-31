@@ -2,7 +2,7 @@ Class MCPData.Tools.HealthExample Extends %AI.Tool
 {
 
 /// List the available resources for this toolset. This method is called by the MCP framework to provide a list of available resources to the client.
-Method ListResources() As %DynamicObject [ WebMethod ]
+ClassMethod ListResources() As %DynamicObject [ WebMethod ]
 {
   Quit {
     "sql":["MCPData_Data.Patient"],
@@ -16,8 +16,8 @@ Method ListResources() As %DynamicObject [ WebMethod ]
   }
 }
 
-/// Method to search for patients in the Patient table based on the provided filters. It returns a list of patients matching the criteria, limited by the specified limit.
-Method SearchPatients(diagnosis As %String="",diabetic As %String="",smoker As %String="",minimumAge As %Integer=0,maximumAge As %Integer=120,limit As %Integer=20) As %DynamicObject [ WebMethod ]
+/// Search patients using filters, returning at most 50 rows per call. row_count is the number returned, not the table size or total matches. applied_limit is the enforced per-call limit. truncated=true means additional matching rows exist; false means this response contains all matches for these filters, not necessarily the whole table.
+ClassMethod SearchPatients(diagnosis As %String="",diabetic As %String="",smoker As %String="",minimumAge As %Integer=0,maximumAge As %Integer=120,limit As %Integer=20) As %DynamicObject [ WebMethod ]
 {
   If limit<1 Set limit=1
   If limit>50 Set limit=50
@@ -29,12 +29,17 @@ Method SearchPatients(diagnosis As %String="",diabetic As %String="",smoker As %
   Set smokerFilter=$SELECT(smoker="":"%",smoker="Yes":1,smoker="No":0,1:"invalid")
   If diabeticFilter="invalid"!(smokerFilter="invalid") Quit {"error":"diabetic and smoker must be Yes, No, or empty"}
   Set rows=[]
-  Set out={"source":"iris","imported_from":"synthetic_healthcare_data.csv","rows":(rows),"row_count":0,"truncated":false}
+  Set out={"source":"iris","imported_from":"synthetic_healthcare_data.csv","rows":(rows),"row_count":0,"applied_limit":(limit),"truncated":false}
   Set stmt=##class(%SQL.Statement).%New()
   Set sc=stmt.%Prepare("SELECT TOP ? PatientCode,Age,Gender,BMI,SystolicPressure,DiastolicPressure,CholesterolLevel,Smoker,Diabetic,Diagnosis,TreatmentCost,AdmissionDate,DischargeDate,Outcome FROM MCPData_Data.Patient WHERE Diagnosis LIKE ? AND CAST(Diabetic AS VARCHAR) LIKE ? AND CAST(Smoker AS VARCHAR) LIKE ? AND Age BETWEEN ? AND ? ORDER BY PatientCode")
   If $$$ISERR(sc) Quit {"error":($SYSTEM.Status.GetErrorText(sc))}
-  Set rs=stmt.%Execute(limit,diagnosisPattern,diabeticFilter,smokerFilter,minimumAge,maximumAge)
+  // Look ahead by one matching row to detect truncation without exposing that row.
+  Set rs=stmt.%Execute(limit+1,diagnosisPattern,diabeticFilter,smokerFilter,minimumAge,maximumAge)
   While rs.%Next() {
+    If rows.%Size()=limit {
+      Do out.%Set("truncated",1,"boolean")
+      Quit
+    }
     Set patient={
       "patientCode":(rs.PatientCode),
       "age":(rs.Age),
@@ -57,7 +62,7 @@ Method SearchPatients(diagnosis As %String="",diabetic As %String="",smoker As %
 }
 
 /// Method to read data from a specified global path, with a specified depth and limit. It returns the data in a structured format, limited by the specified limit.
-Method ReadGlobalData(path As %String="^ERRORS",depth As %Integer=3,limit As %Integer=20) As %DynamicObject [ WebMethod ]
+ClassMethod ReadGlobalData(path As %String="^ERRORS",depth As %Integer=3,limit As %Integer=20) As %DynamicObject [ WebMethod ]
 {
   Set rows=[]
   Set out={"rows":(rows),"count":0,"truncated":false}
@@ -77,13 +82,13 @@ Method ReadGlobalData(path As %String="^ERRORS",depth As %Integer=3,limit As %In
   }
   Do out.%Set("count",rows.%Size())
   If current'="",$EXTRACT(current,1,$LENGTH(root))=root {
-    Do out.%Set("truncated","true")
+    Do out.%Set("truncated",1,"boolean")
   }
   Quit out
 }
 
 /// Method to retrieve the largest globals in the current namespace. It returns a list of globals sorted by size, limited by the specified limit.
-Method LargestGlobals(limit As %Integer=10) As %DynamicObject [ WebMethod ]
+ClassMethod LargestGlobals(limit As %Integer=10) As %DynamicObject [ WebMethod ]
 {
   If limit<1 Set limit=1
   If limit>20 Set limit=20
@@ -118,7 +123,7 @@ Method LargestGlobals(limit As %Integer=10) As %DynamicObject [ WebMethod ]
 }
 
 /// Method to retrieve recent application errors from the ^ERRORS global. It returns a list of errors with their timestamps, limited by the specified limit.
-Method RecentApplicationErrors(limit As %Integer=10) As %DynamicObject [ WebMethod ]
+ClassMethod RecentApplicationErrors(limit As %Integer=10) As %DynamicObject [ WebMethod ]
 {
   If limit<1 Set limit=1
   If limit>20 Set limit=20

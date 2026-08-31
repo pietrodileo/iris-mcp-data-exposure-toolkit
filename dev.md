@@ -20,22 +20,41 @@ command: ["--config", "/home/irisowner/dev/config_http.toml", "run"]
 
 It uses the same built project image only so the binary and configuration are already available. The `mcp` container does not start another IRIS instance.
 
-Runtime path and ports:
+### From client to ObjectScript
 
 ```text
-MCP client
-  -> host localhost:8280
-  -> mcp container port 8080
-  -> iris container port 1972
-  -> /mcp/health-example registration
-  -> MCPData.Service.HealthExample
+MCP client (on your machine)
+  |
+  | Streamable HTTP: http://localhost:8280/mcp/health-example
+  | Docker maps host port 8280 to container port 8080
+  v
+iris-mcp-server (in the mcp container)
+  |
+  | Native connection to iris:1972 over the Compose network
+  v
+IRIS (in the iris container, namespace MCP_EXAMPLE)
+  -> MCPData.Service.HealthExample    selects the ToolSet
+  -> MCPData.ToolSet.HealthExample    attaches authorization and audit policies
+  -> MCPData.Tools.HealthExample      executes the requested ObjectScript method
 ```
 
-The `8280:8080` Compose mapping exposes the bridge to the host. Port `1972` remains the bridge-to-IRIS connection inside the Compose network; host port `9291` exists for development access and is not needed by local MCP clients.
+The endpoint path `/mcp/health-example` is configured in both the bridge and the IRIS application registration. IRIS uses that registration to select the namespace and dispatch class. It is not a separate network hop after port `1972`.
+
+The client connects only to port `8280`. The bridge uses the Compose service name `iris` and internal port `1972`, not `localhost` or host port `9291`. Host ports `9291` (SuperServer) and `9292` (Management Portal) are for direct development and administration access, not MCP traffic.
 
 An MCP transport component is required when external clients use this AI Hub EAP service. The official template provides `iris-mcp-server`; replacing it would mean building and maintaining an equivalent gateway. The binary could technically run inside the IRIS container or on the host, but it would still be required. A sidecar is used here because it keeps process lifecycle and logs separate without adding application code.
 
 During image build, `App.Installer` creates namespace `MCP_EXAMPLE`, imports `src`, registers the native MCP application, imports the CSV, and seeds the allowlisted example global.
+
+### Local connection limits
+
+The demo limits the bridge pool to `min = 1, max = 2`, with a 60-second idle timeout, a 60-second request timeout, a two-session per-auth-context cap, and a ten-minute maximum session age. The listener accepts at most two concurrent requests. These are conservative development settings, not a license-capacity guarantee for other clients or identities.
+
+The five data tools are stateless `ClassMethod`s. They do not need per-client object state. In this EAP build, using instance methods caused disconnected clients to leave CSP license connections recorded; the stateless version returned to baseline in reconnect testing. Keep the stateless-discovery regression when adding tools. A genuinely stateful tool needs separate session-lifecycle testing.
+
+Compose checks IRIS readiness every 30 seconds instead of opening a terminal session every two seconds. A Compose health-check change applies when the container is recreated, not on `docker compose restart`. Do not recreate an existing demo just to change that interval without preserving its data: this project does not configure persistent database volumes.
+
+If license exhaustion prevents administration, stop the bridge first. Other clients or retained sessions may still consume capacity; an in-place IRIS restart can recover the local demo but interrupts those clients. Do not use license-release APIs to bypass accounting. Reconnect clients after recovery and verify usage rather than relying on repeated restarts.
 
 ## Environment variables and two identities
 
@@ -47,11 +66,19 @@ Copy `.env.example` to `.env`. Four variables are required:
 These identities have different purposes and must not be reused. `config_http.toml` uses `WG_*` for its `server` connection and `APP_*` for its published endpoint. MCP clients receive only `APP_*`; `WG_*` stay inside the bridge container.
 
 ```text
-MCP client
-  -- Streamable HTTP Basic authentication: APP_USER / APP_PASS
-  --> iris-mcp-server
-  -- internal native connection: WG_USER / WG_PASS
-  --> IRIS
+MCP client (on your machine)
+  |
+  | Streamable HTTP to localhost:8280/mcp/health-example
+  | HTTP Basic authentication: APP_USER / APP_PASS
+  | Application identity: mcp_reader (role MCPDataReader)
+  v
+iris-mcp-server (in the mcp container)
+  |
+  | Internal native connection to iris:1972
+  | Gateway credentials: WG_USER / WG_PASS
+  | Gateway identity: CSPSystem
+  v
+IRIS (in the iris container, namespace MCP_EXAMPLE)
 ```
 
 Compose environment variables exist when containers run, not while the Docker image is compiled. For that reason, role and web-application definitions are installed during build, while `MCPData.Setup.ConfigureUsers()` is run after container startup to read credentials and create the endpoint user.
@@ -89,7 +116,19 @@ An authenticated request therefore needs both valid endpoint credentials and the
 - `MCPData.Policy.Authorization` permits only named tools, rejects arbitrary global paths, and clamps depth and result limits.
 - `MCPData.Policy.Audit` stores tool name, duration, status, and bounded result count in `MCPData.Data.Audit`. It does not store credentials or full patient results.
 
-Public `WebMethod` methods on `MCPData.Tools.HealthExample` become discoverable MCP tools:
+The EAP bridge passes audit arguments as JSON text and wraps tool output in `result_json`. The audit policy normalizes both JSON strings and direct dynamic objects before reading fields. Counts come from `row_count`, `count`, or the `rows` array. Application-level error payloads are recorded in `StatusText`, and text fields are clipped to their persistent property limits.
+
+In EAP build `2026.3.0AI.136.0`, authorization denials do not invoke the execution audit callback. The authorization policy therefore records its own rejections, with zero execution duration. Recheck this behavior when upgrading AI Hub to avoid duplicate denial records if the framework adds that callback. Authentication failures and requests that never reach these policies are outside this application audit.
+
+Run the focused regression test in the local demo (test rows are rolled back; existing audit records are preserved):
+
+```bash
+docker compose exec iris iris session IRIS -U MCP_EXAMPLE 'Write $SYSTEM.Status.GetErrorText(##class(MCPData.AuditTest).Run()),!'
+```
+
+It covers all five tool types, string/object arguments, result envelopes, errors, long audit fields, and authorization denials. Run it without concurrent MCP traffic because its assertions inspect the latest audit row.
+
+Public `WebMethod` class methods on `MCPData.Tools.HealthExample` become discoverable MCP tools:
 
 - `ListResources`
 - `SearchPatients`
@@ -103,19 +142,32 @@ Public `WebMethod` methods on `MCPData.Tools.HealthExample` become discoverable 
 
 `SearchPatients` exposes a fixed parameterized SQL query over `MCPData_Data.Patient`. Clients can provide scalar filters but cannot supply SQL. Results are limited to 50.
 
+The query reads one extra match internally to set the Boolean `truncated` flag accurately, without returning the extra row. `row_count` counts only returned rows; `applied_limit` describes the enforced per-call limit. The authorization policy accepts object or JSON-text arguments and rejects malformed or nested inputs before execution.
+
+Run the read-only metadata tests inside IRIS and the endpoint/reconnect tests from a configured Python environment:
+
+```bash
+docker compose exec iris iris session IRIS -U MCP_EXAMPLE 'Write $SYSTEM.Status.GetErrorText(##class(MCPData.Test).SearchPatientLimits()),!'
+python test_mcp_regressions.py
+```
+
+The Python test requires exported `APP_USER` and `APP_PASS`, just like `test_mcp.py`. It makes 127 tool calls, including concurrent clients, 30 reconnects, and three expected failures. It appends normal audit records. With no competing traffic, the audit count should increase by exactly 127. Inspect `%SYSTEM.License:UserList` and `$SYSTEM.License.ShowSummary()` from an administrative IRIS terminal before and after testing; distinguish license units from connection counts.
+
 `ReadGlobalData` accepts only the `^ERRORS` global and bounds traversal depth and row count.
 
 `LargestGlobals` uses `%SYS.GlobalQuery` for estimated sizes of non-system globals visible in `MCP_EXAMPLE`. `RecentApplicationErrors` reads `^ERRORS` but returns only ID, timestamp, and error text. Stack frames, local variables, usernames, and object contents remain hidden.
 
-## Request flow
+## What happens during a tool call
 
-1. MCP client sends a Streamable HTTP request to host port `8280` and authenticates to `iris-mcp-server` with `APP_USER` and `APP_PASS`.
-2. Docker forwards the request to bridge port `8080`; the bridge connects to the `iris` service on port `1972` with `WG_USER` and `WG_PASS`.
-3. IRIS resolves `/mcp/health-example` to `MCPData.Service.HealthExample` and checks `MCPDataReader`.
-4. AI Hub discovers the ToolSet schema.
-5. Authorization policy validates each call.
-6. Tool executes its bounded read.
-7. Audit policy records execution metadata.
+Discovery tells the client which tools and arguments are available. Calling one of those tools then follows the policies attached to the ToolSet:
+
+1. Endpoint authentication and the `MCPDataReader` role check control access to the service.
+2. `MCPData.Policy.Authorization` checks the tool name and arguments, then clamps supported limits before execution. Rejected calls are audited here and do not reach the tool method.
+3. The matching class method in `MCPData.Tools.HealthExample` runs its fixed query or bounded global read.
+4. `MCPData.Policy.Audit` records execution metadata, including failures, without saving the full result payload.
+5. The result travels back through `iris-mcp-server` to the client.
+
+For example, `SearchPatients(limit=1000)` reaches the method with a limit of `50`. The query reads up to `51` matches internally to detect truncation, returns at most `50` patients, and reports `applied_limit`, `row_count`, and `truncated`. A `ReadGlobalData` request for a path other than `^ERRORS` is rejected before any global traversal.
 
 ## Configure an MCP client
 
