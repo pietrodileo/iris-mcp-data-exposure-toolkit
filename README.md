@@ -223,4 +223,4 @@ Start with the example closest to your data source:
 3. Update `ListResources`, tool descriptions, authorization rules, and IRIS grants so discovery and execution describe the same approved surface.
 4. Extend the tests to cover both permitted calls and attempts outside that surface, and review what the audit policy records.
 
-See the [Developer Guide](dev.md) for the class layout and configuration details. If you are using the surrounding AI Hub Studio workspace, the sibling `../my-first-agent` project also includes a client configuration for this endpoint.
+See the [Developer Guide](dev.md) for the class layout and configuration details.
