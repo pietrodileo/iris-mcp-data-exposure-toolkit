@@ -4,6 +4,8 @@ A runnable example of how to give AI agents controlled access to InterSystems IR
 
 For implementation details, credentials, role configuration, and client examples, see the [Developer Guide](dev.md).
 
+For more information about this project you can find the related article here: [Exposing IRIS data through MCP with AI Hub: a practical toolkit with access controls](https://community.intersystems.com/post/exposing-iris-data-through-mcp-ai-hub-practical-toolkit-access-controls)
+
 ## Table of contents
 
 - [How this project was born](#how-this-project-was-born)
